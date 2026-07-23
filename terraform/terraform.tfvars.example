@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars and fill in your own value.
+# terraform.tfvars is gitignored — never commit it.
+
+domain_name = "sunsetheard.dev"

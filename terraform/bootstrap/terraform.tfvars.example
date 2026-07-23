@@ -1,0 +1,7 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars is gitignored — never commit it, even though nothing
+# here is truly secret, it's good habit-building for when it does matter.
+
+aws_region        = "us-east-1"
+state_bucket_name = "cloud-resume-tf-state-CHANGE-ME-1234"
+lock_table_name    = "cloud-resume-tf-lock"
