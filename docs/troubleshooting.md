@@ -167,6 +167,144 @@ for your domain, not for the CloudFront-assigned one.
 **Fix:** this is expected when testing via the CloudFront URL directly;
 visit your actual domain instead once DNS has propagated.
 
+### `terraform init` error: "Provider type mismatch" between root and child module
+**Cause:** the child module referenced the `aws` and `cloudflare`
+providers (via data sources / resources) but never declared them in
+its own `terraform { required_providers { ... } }` block. Without that
+declaration, Terraform can't confirm the module's "cloudflare" is the
+same `cloudflare/cloudflare` provider passed down from the root module
+— it silently assumes a different, non-existent default instead.
+**Fix:** add a `required_providers` block to the child module itself
+(matching the same `source` values as the root), including
+`configuration_aliases` for any aliased provider (like `aws.us_east_1`)
+passed in via the `providers = { ... }` block in the module call.
+
+### Phase 1 verified working
+`terraform apply` completed cleanly (11 resources), and both the raw
+CloudFront URL and the custom domain returned `HTTP/2 200` on the
+first try — DNS had already propagated and the ACM certificate
+validated without any manual intervention needed.
+
 ---
 
-*(Phases 2-6 troubleshooting entries will be added as we build them.)*
+## Phase 2 — Visitor Counter Backend
+
+### CORS error in browser console: "No 'Access-Control-Allow-Origin' header"
+**Cause:** almost always a mismatch between the exact origin the
+browser sends and the `allowed_origin` configured in Terraform — for
+example `https://sunsetheard.dev` vs `https://www.sunsetheard.dev`,
+or a trailing slash, or `http` vs `https`. CORS origin matching is
+exact-string, not fuzzy.
+**Fix:** check the browser's Network tab for the exact `Origin` header
+sent, and confirm `var.allowed_origin` (in `terraform.tfvars` or
+wherever it's set) matches it exactly, then re-apply.
+
+### API returns count but it doesn't increment on refresh in the browser
+**Cause:** most likely the browser (or an intermediate cache) is
+caching the API response. HTTP API/Lambda responses aren't cached by
+default, but a browser can still cache a GET request under some
+conditions, or a service worker from a previous project could be
+interfering.
+**Fix:** hard-refresh (Cmd+Shift+R) and check the Network tab to
+confirm a new request is actually being sent each time, not served
+from cache.
+
+### `terraform apply` fails creating the Lambda: "InvalidParameterValueException... zip file"
+**Cause:** the `archive_file` data source didn't find `counter.py` at
+the expected relative path, usually because the module was moved or
+the repo folder structure doesn't match what the module's
+`source_file` path expects.
+**Fix:** confirm you're running Terraform from `terraform/` (not a
+subdirectory), and that `backend/lambda/counter.py` exists relative to
+the repo root.
+
+### `pip install` fails building `cryptography` (needed by `moto`)
+**Cause:** the original test setup used `moto` to mock AWS services,
+which pulls in the `cryptography` package as a dependency. That
+package includes native (Rust/C) code that must compile during
+install if no prebuilt wheel matches your exact Python version/OS/
+architecture combination — common on older or less common macOS
+setups, and it needs a working Rust toolchain to build from source,
+which most machines don't have installed by default.
+**Fix:** switched the test suite entirely to `botocore`'s built-in
+`Stubber` instead of `moto`. It requires zero extra dependencies
+beyond `boto3` (already needed for the Lambda itself), avoids the
+whole native-compilation problem, and is arguably a better fit anyway
+for a single, narrow unit test like this one.
+
+### `Stubber` `StubAssertionError`: expected params don't match received params for DynamoDB
+**Cause:** a genuine, well-known gotcha when stubbing the *resource*
+interface (`boto3.resource("dynamodb").Table(...)`) rather than the
+low-level client. DynamoDB's resource layer converts native Python
+types (e.g. `"visits"`, `1`) into DynamoDB's typed wire format (e.g.
+`{"S": "visits"}`, `{"N": "1"}`) via its own internal event hook — but
+`Stubber` validates request parameters at an earlier stage, before
+that conversion runs. So `Stubber`'s expected request parameters must
+be written in plain Python types, NOT DynamoDB's wire format, even
+though the *response* you hand back still must be in wire format,
+since that's what gets deserialized into native types afterward.
+**Fix:** write `expected_params` for the request using plain types
+(`{"Key": {"id": "visits"}, "ExpressionAttributeValues": {":incr": 1}}`)
+while keeping the stubbed response in typed wire format
+(`{"Attributes": {"count": {"N": "1"}}}`).
+
+### `terraform plan` fails: "Failed to load plugin schemas" for `hashicorp/archive` or `hashicorp/null` (dyld symbol not found)
+**Cause:** the same class of problem as the AWS CLI v2 issue in
+Phase 0 — some Terraform provider plugin binaries (both `archive` and,
+separately, `null` when used as a workaround) are compiled targeting a
+newer macOS version (e.g. 12.0) than an older Mac may be running (e.g.
+10.14 Mojave), so the OS is missing a required system symbol and the
+plugin can't even start. This isn't limited to one specific provider —
+it's a general risk with any separately-compiled Terraform plugin on
+an older system, since HashiCorp's build pipeline has moved to newer
+minimum macOS targets over time. Notably, `aws` and `cloudflare` were
+NOT affected — only the smaller utility providers were.
+**Fix:** removed the dependency on any extra provider for zipping the
+Lambda code. Instead, `backend/lambda/build.sh` is a plain shell
+script (using the `zip` command already present on macOS/Linux) that
+must be run manually before `terraform apply`, producing
+`terraform/modules/counter-api/counter.zip`, which the Lambda resource
+references directly via `filename` and `filebase64sha256`. Zero extra
+providers, and it mirrors how real CI/CD pipelines separate a build
+step from a deploy step (which Phase 4 formalizes with GitHub Actions).
+
+---
+
+## Phase 4 — CI/CD with GitHub Actions
+
+### `terraform apply` fails: "EntityAlreadyExists: Provider already exists"
+**Cause:** your AWS account already has an OIDC identity provider
+registered for `token.actions.githubusercontent.com` — only one can
+exist per URL per account, so if any other project in this same
+account previously set up GitHub Actions OIDC, creating a second one
+conflicts.
+**Fix:** reference the existing provider instead of creating a new
+one. Replace the `aws_iam_openid_connect_provider` resource in
+`terraform/modules/github-oidc/main.tf` with a data source:
+```hcl
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+```
+and update the one reference to `aws_iam_openid_connect_provider.github.arn`
+to `data.aws_iam_openid_connect_provider.github.arn`.
+
+### GitHub Actions workflow fails: "Not authorized to perform sts:AssumeRoleWithWebIdentity"
+**Cause:** almost always one of: (1) the `AWS_GITHUB_ACTIONS_ROLE_ARN`
+secret is wrong or missing, (2) the workflow is running on a branch
+other than `main` (the trust policy explicitly only allows `main`), or
+(3) the workflow YAML is missing the `permissions: id-token: write`
+block, without which GitHub won't issue an OIDC token at all.
+**Fix:** double-check the secret value matches `terraform output
+github_actions_role_arn` exactly, confirm you're pushing to `main`,
+and confirm the `permissions:` block is present in the workflow file.
+
+### A backend or frontend change doesn't trigger its workflow
+**Cause:** the `paths:` filter in the workflow YAML only fires on
+changes to specific folders (`frontend/**` or `backend/**`) — a commit
+touching only `docs/`, `README.md`, or `terraform/` won't trigger
+either one. This is intentional, not a bug.
+
+---
+
+*(Phases 5-6 troubleshooting entries will be added as we build them.)*

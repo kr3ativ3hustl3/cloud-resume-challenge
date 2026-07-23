@@ -72,3 +72,16 @@ module "counter_api" {
 
   allowed_origin = "https://${var.domain_name}"
 }
+
+module "github_oidc" {
+  source = "./modules/github-oidc"
+
+  providers = {
+    aws = aws
+  }
+
+  github_repo                 = var.github_repo
+  site_bucket_arn             = module.static_site.bucket_arn
+  cloudfront_distribution_arn = module.static_site.cloudfront_distribution_arn
+  lambda_function_arn         = module.counter_api.lambda_function_arn
+}

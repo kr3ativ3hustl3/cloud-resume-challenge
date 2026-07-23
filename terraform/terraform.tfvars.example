@@ -2,3 +2,4 @@
 # terraform.tfvars is gitignored — never commit it.
 
 domain_name = "sunsetheard.dev"
+github_repo = "kr3ativ3hustl3/cloud-resume-challenge"

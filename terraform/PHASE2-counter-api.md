@@ -53,7 +53,7 @@ export CLOUDFLARE_API_TOKEN="your-token"
 
 ```bash
 terraform init
-````
+```
 
 ```bash
 terraform plan

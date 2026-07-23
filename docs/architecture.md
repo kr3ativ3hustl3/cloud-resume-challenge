@@ -84,6 +84,75 @@ with a 200 status keeps the experience clean. Tradeoff: genuinely
 missing pages won't show a distinct "404" signal to search engines —
 acceptable for a small personal site with no meaningful SEO concerns.
 
+### HTTP API (API Gateway v2), not REST API (v1)
+API Gateway offers two distinct product types. The older REST API
+type supports more features (request validation, usage plans, API
+keys) but costs more and has more configuration surface. HTTP API is
+newer, cheaper, and covers everything this project needs: one route,
+Lambda proxy integration, and CORS. For a single-endpoint visitor
+counter, the extra REST API features would be unused complexity.
+
+### Page-load counter, not unique-visitor counter
+This counts every page load, not distinct visitors — refreshing the
+page increments it again. A true unique-visitor counter needs some
+form of client identification (cookies, local storage, or IP-based
+deduplication), which adds real complexity and, for cookies/tracking,
+privacy considerations that aren't worth it for a portfolio site's
+visitor counter. This tradeoff is intentional and worth mentioning if
+asked in an interview — it shows awareness of the distinction, not
+just a decision made by default.
+
+### AWSLambdaBasicExecutionRole (managed policy) for logging, but a custom scoped policy for DynamoDB
+These two IAM decisions look inconsistent at first glance but aren't.
+The logging permissions (CreateLogGroup/CreateLogStream/PutLogEvents)
+are identical for virtually every Lambda function, so using AWS's own
+managed policy is the standard, low-maintenance choice. The DynamoDB
+permission, by contrast, is specific to this function's actual job —
+it's scoped to exactly one action (`UpdateItem`) on exactly one table,
+which is what real least-privilege IAM looks like: broad, well-known
+permissions can reasonably use managed policies, but anything
+resource-specific should be scoped by hand.
+
+### Hardcoded API endpoint in frontend JS, not a config file
+The counter's API URL is written directly into `counter.js` rather
+than injected from an environment variable or config file at build
+time. For a single-environment personal project, adding a build step
+or config-templating system just to avoid one hardcoded URL is more
+complexity than it's worth. If this project ever needed multiple
+environments (staging/prod), templating the URL in via the Phase 4
+CI/CD pipeline would be the natural next step.
+
+### Zip-based Lambda packaging via a manual shell script, not a Terraform provider
+Both the `archive` and `null` Terraform provider plugins turned out to
+require a newer OS version than this project's development machine
+has, breaking outright rather than degrading gracefully. Rather than
+keep hunting for a compatible provider version, packaging moved to a
+plain shell script (`backend/lambda/build.sh`) using the `zip` command
+already present on macOS/Linux. This adds one manual step before
+`terraform apply` but removes two fragile binary dependencies, and
+mirrors how real CI/CD pipelines separate a build step from a deploy
+step — which Phase 4 formalizes properly with GitHub Actions.
+
+### CI/CD deploys application code only, never runs terraform apply
+GitHub Actions has narrow, explicit permissions — upload to one S3
+bucket, invalidate one CloudFront distribution, update one Lambda
+function's code. It cannot create, modify, or delete any other AWS
+resource. This means a compromised or buggy workflow run has a small,
+well-understood blast radius, rather than the ability to reshape the
+whole account's infrastructure. Infrastructure changes remain a
+manual, deliberate `terraform apply` run by a human. Tradeoff: this
+means infrastructure and application code deploy through two different
+paths, which is slightly less "everything as code" than a fully
+GitOps-driven setup — a reasonable next evolution for a larger project,
+but more machinery than a personal portfolio site needs.
+
+### GitHub Actions OIDC, not long-lived IAM access keys
+The alternative — storing an IAM user's access key/secret as GitHub
+secrets — is a common real-world breach vector, since those
+credentials are long-lived and static. OIDC lets GitHub Actions
+request a short-lived token scoped to exactly this repo and branch,
+with no static secret to leak in the first place.
+
 ## Cost breakdown (expected)
 
 | Service | Free tier | Expected usage | Expected cost |
@@ -112,9 +181,18 @@ everything else at this traffic level.
   Cloudflare API token scoped to a single zone with DNS-edit-only
   permission, stored only as a local environment variable, never
   committed to the repo.
-- (Later phases will add: S3 bucket policy restricting access to
-  CloudFront only via OIC, API Gateway throttling, least-privilege
-  Lambda execution role, GitHub OIDC trust policy scoped to this repo.)
+- Phase 2: Lambda execution role scoped to exactly one DynamoDB action
+  (`UpdateItem`) on exactly one table — cannot read, scan, delete, or
+  touch any other table. CloudWatch log retention capped at 14 days
+  rather than kept indefinitely. API Gateway CORS configuration
+  restricts which origins may call the endpoint from a browser.
+- Phase 4: GitHub Actions authenticates via OIDC with short-lived,
+  auto-expiring tokens — no static AWS credentials stored anywhere in
+  GitHub. The CI/CD IAM role is scoped to exactly three actions on
+  three specific resources (this S3 bucket, this CloudFront
+  distribution, this Lambda function) and can be assumed only from
+  this exact repo's `main` branch — a compromised workflow run cannot
+  touch any other AWS resource or run `terraform apply`.
 
 ## Observability posture (running list, updated per phase)
 

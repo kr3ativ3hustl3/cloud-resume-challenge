@@ -5,11 +5,13 @@ via GitHub Actions CI/CD. Built as a hands-on project to learn AWS
 fundamentals (static hosting, CDN, serverless compute, IaC, CI/CD,
 security, and observability) end to end.
 
-**Status:** 🚧 In progress — Phase 1 of 6 complete (static site
-infrastructure). Built and tested on macOS 10.14 with AWS CLI v1
+**Status:** 🚧 In progress — Phase 4 of 6 complete (CI/CD via GitHub
+Actions with OIDC). Built and tested on macOS 10.14 with AWS CLI v1
 (pip-installed) and Terraform 1.9.8. Domain registered and DNS hosted
 on Cloudflare (see architecture.md for why this differs from the
-original Route53-only plan).
+original Route53-only plan). Lambda deployment package is built
+manually via a shell script rather than a Terraform provider — see
+troubleshooting.md.
 
 ## Architecture
 
@@ -40,7 +42,7 @@ Full details in [`docs/architecture.md`](docs/architecture.md).
 - **Backend:** Python Lambda + API Gateway (visitor counter)
 - **Database:** DynamoDB
 - **IaC:** Terraform
-- **CI/CD:** GitHub Actions (OIDC — no long-lived AWS keys in CI)
+- **CI/CD:** GitHub Actions (OIDC — no long-lived AWS keys in CI), scoped to deploy application code only
 - **DNS/TLS:** Route53 + ACM (free public certs)
 - **Observability:** CloudWatch dashboards, alarms, structured logs
 
@@ -70,9 +72,12 @@ cloud-resume-challenge/
       state backend. See [`terraform/bootstrap/README.md`](terraform/bootstrap/README.md).
 - [x] **Phase 1** — Static site infrastructure (S3 + CloudFront + ACM +
       Cloudflare DNS). See [`terraform/README.md`](terraform/README.md).
-- [ ] **Phase 2** — Visitor counter backend (DynamoDB + Lambda + API Gateway)
-- [ ] **Phase 3** — Wire frontend to backend API
-- [ ] **Phase 4** — CI/CD pipelines (GitHub Actions)
+- [x] **Phase 2** — Visitor counter backend (DynamoDB + Lambda + API
+      Gateway). See [`terraform/PHASE2-counter-api.md`](terraform/PHASE2-counter-api.md).
+- [x] **Phase 3** — Wire frontend to backend API. See
+      [`frontend/PHASE3-wiring.md`](frontend/PHASE3-wiring.md).
+- [x] **Phase 4** — CI/CD pipelines (GitHub Actions + OIDC). See
+      [`PHASE4-cicd.md`](PHASE4-cicd.md).
 - [ ] **Phase 5** — Observability (CloudWatch dashboards + alarms)
 - [ ] **Phase 6** — Final polish & write-up
 

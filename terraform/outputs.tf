@@ -32,3 +32,9 @@ output "site_url" {
   description = "The final, public URL of the site"
   value       = "https://${var.domain_name}"
 }
+
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions to assume via OIDC — paste this into your workflow YAML files"
+  value       = module.github_oidc.role_arn
+}
+

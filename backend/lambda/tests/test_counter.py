@@ -27,6 +27,9 @@ TEST_COUNTER_ID = "visits"
 os.environ["TABLE_NAME"] = TEST_TABLE_NAME
 os.environ["COUNTER_ID"] = TEST_COUNTER_ID
 os.environ["ALLOWED_ORIGIN"] = "https://sunsetheard.dev"
+# Set explicitly so these tests never depend on the developer's local
+# AWS CLI profile or region being configured — they should run
+# identically on any machine, with or without AWS credentials at all.
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
 import counter  # noqa: E402  (must import after env vars are set above)

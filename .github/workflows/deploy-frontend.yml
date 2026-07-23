@@ -1,0 +1,38 @@
+name: Deploy Frontend
+
+# Only runs when frontend files actually change, and only on pushes to
+# main — not on every commit to the repo, and not on pull requests
+# (which could come from an untrusted fork).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+
+permissions:
+  id-token: write # required for OIDC — this is what lets the job
+  # request a token from GitHub's OIDC provider at all
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync frontend to S3
+        run: |
+          aws s3 sync frontend s3://${{ secrets.SITE_BUCKET_NAME }} --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"

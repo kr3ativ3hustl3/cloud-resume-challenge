@@ -22,6 +22,9 @@ __pycache__/
 venv/
 .venv/
 
+# Lambda build artifacts (rebuilt by backend/lambda/build.sh)
+terraform/modules/counter-api/counter.zip
+
 # Node
 node_modules/
 
@@ -32,6 +35,3 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
-
-# Lambda build artifacts (rebuilt by backend/lambda/build.sh)
-terraform/modules/counter-api/counter.zip
