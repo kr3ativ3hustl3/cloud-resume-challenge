@@ -1,8 +1,5 @@
 name: Deploy Frontend
 
-# Only runs when frontend files actually change, and only on pushes to
-# main — not on every commit to the repo, and not on pull requests
-# (which could come from an untrusted fork).
 on:
   push:
     branches: [main]
@@ -10,8 +7,7 @@ on:
       - "frontend/**"
 
 permissions:
-  id-token: write # required for OIDC — this is what lets the job
-  # request a token from GitHub's OIDC provider at all
+  id-token: write
   contents: read
 
 jobs:
@@ -20,6 +16,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Debug secret length
+        run: echo "Length is ${#ROLE_ARN}"
+        env:
+          ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
